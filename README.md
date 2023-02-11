@@ -7,3 +7,9 @@ Tower Defense clone in Python.
 ```bash
 pip install --editable .
 ```
+
+## Usage
+
+```bash
+python -m tower.main  # TODO: this does not work
+```
