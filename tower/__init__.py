@@ -1,11 +1,11 @@
 """Game constants."""
-import pygame as pg  # TODO: move to constants to avoid import?
+from pygame import Rect as pg_rect
 
 VERSION = '0.0.1'
 
 WIDTH = 960
 HEIGHT = 540
-SCREEN_RECT = pg.Rect(0, 0, WIDTH, HEIGHT)  # FIXME: (0, 0) magic numbers
+SCREEN_RECT = pg_rect(0, 0, WIDTH, HEIGHT)  # FIXME: (0, 0) magic numbers
 
 DESIRED_FPS = 60
 IMAGE_SPRITES = {

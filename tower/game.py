@@ -1,9 +1,12 @@
 """Game functionalities."""
 import typing
 from enum import Enum
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # TODO: replace pg vs methods
 
-import pygame as pg
+from pygame import (
+    event as pg_event, init as pg_init, display as pg_display, mixer as pg_mixer, font as pg_font,
+    KEYDOWN, K_ESCAPE, QUIT, FULLSCREEN, Surface as pg_surface, Rect as pg_rect, time as pg_time
+)
 
 from tower import SCREEN_RECT, DESIRED_FPS, IMAGE_SPRITES
 
@@ -55,8 +58,8 @@ class GameLoop:
         Sample event handler that ensures quit events and normal event loop processing takes place. Without this,
         the game will hang, and repaints by the operating system will not happen, causing the game window to hang.
         """
-        for event in pg.event.get():
-            if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE or event.type == pg.QUIT:
+        for event in pg_event.get():
+            if event.type == KEYDOWN and event.key == K_ESCAPE or event.type == QUIT:
                 self.set_state(GameState.QUITTING)
 
             # Delegate the event to a sub-event handler `handle_event`
@@ -92,14 +95,14 @@ class TowerGame:
     Game engine class.
 
     Attributes:
-        screen (pg.Surface): The game's screen.
-        screen_rect (pg.Rect): The game's screen's rect.
+        screen (pygame.Surface): The game's screen.
+        screen_rect (pygame.Rect): The game's screen's rect.
         full_screen (bool): Whether the game is in full screen mode.
         state (GameState): The game's state.
     """
 
-    screen: pg.Surface
-    screen_rect: pg.Rect
+    screen: pg_surface
+    screen_rect: pg_rect
     full_screen: bool
     state: GameState
     game_menu: GameLoop = field(init=False, default=None)
@@ -158,24 +161,24 @@ class TowerGame:
     def initialize(self):
         """Initializes the game engine."""
         self.assert_state_is(GameState.INITIALIZING)
-        pg.init()
+        pg_init()
 
-        window_style = pg.FULLSCREEN if self.full_screen else 0
+        window_style = FULLSCREEN if self.full_screen else 0
 
         # 32 bits of color depth  # TODO: args: mode_ok(size, flags=0, depth=0, display=0) -> depth
-        bit_depth = pg.display.mode_ok(self.screen_rect.size, window_style, 32)
-        screen = pg.display.set_mode(self.screen_rect.size, window_style, bit_depth)
+        bit_depth = pg_display.mode_ok(self.screen_rect.size, window_style, 32)
+        screen = pg_display.set_mode(self.screen_rect.size, window_style, bit_depth)
         self.game_menu = GameMenu(game=self)
         self.set_state(GameState.INITIALIZED)
 
-        pg.mixer.pre_init(
+        pg_mixer.pre_init(
             frequency=44100,
             size=32,
             channels=2,  # 2 means stereo, not the number of channels to use in the mixer
             buffer=512,
         )
 
-        pg.font.init()
+        pg_font.init()
 
         self.screen = screen
 
@@ -185,10 +188,10 @@ class TowerGame:
 @dataclass
 class GameMenu(GameLoop):
     def loop(self):
-        clock = pg.time.Clock()  # TODO: should this be a constant?
+        clock = pg_time.Clock()  # TODO: should this be a constant?
         self.screen.blit(IMAGE_SPRITES[(False, False, 'backdrop')], (0, 0))
         while self.state == GameState.MAIN_MENU:
             self.handle_events()
-            pg.display.flip()
-            pg.display.set_caption(f'FPS: {clock.get_fps()}')
+            pg_display.flip()
+            pg_display.set_caption(f'FPS: {clock.get_fps()}')
             clock.tick(DESIRED_FPS)

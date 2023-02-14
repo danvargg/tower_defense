@@ -1,5 +1,6 @@
 """Game sprites."""
-import pygame as pg
+from pygame import sprite
 
 
-class Sprite(pg.sprite.Sprite):
+class Sprite(sprite.Sprite):
+    pass
