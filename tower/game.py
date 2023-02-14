@@ -1,11 +1,11 @@
 """Game functionalities."""
 import typing
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pygame as pg
 
-from tower import SCREEN_RECT
+from tower import SCREEN_RECT, DESIRED_FPS, IMAGE_SPRITES
 
 
 class GameState(Enum):
@@ -37,6 +37,55 @@ class StateError(Exception):
     """
 
 
+class GamEditing:
+    pass
+
+
+@dataclass
+class GameLoop:
+    """_summary_
+
+    Attributes:
+        game (TowerGame): The game engine.
+    """
+    game: 'TowerGame'
+
+    def handle_events(self):
+        """
+        Sample event handler that ensures quit events and normal event loop processing takes place. Without this,
+        the game will hang, and repaints by the operating system will not happen, causing the game window to hang.
+        """
+        for event in pg.event.get():
+            if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE or event.type == pg.QUIT:
+                self.set_state(GameState.QUITTING)
+
+            # Delegate the event to a sub-event handler `handle_event`
+            self.handle_event(event)
+
+    def loop(self):
+        """_summary_
+        """
+        while self.state != GameState.QUITTING:
+            self.handle_events()
+
+    def handle_event(self, event):
+        """
+        Handles a singular event, `event`.
+        """
+
+    # Convenience shortcuts
+    def set_state(self, new_state):
+        self.game.set_state(new_state)
+
+    @property
+    def screen(self):
+        return self.game.screen
+
+    @property
+    def state(self):
+        return self.game.state
+
+
 @dataclass
 class TowerGame:
     """
@@ -53,6 +102,7 @@ class TowerGame:
     screen_rect: pg.Rect
     full_screen: bool
     state: GameState
+    game_menu: GameLoop = field(init=False, default=None)
 
     @classmethod  # TODO: how does this method work?
     def create(cls, full_screen: bool = False) -> 'TowerGame':  # TODO: double check this return type
@@ -94,17 +144,16 @@ class TowerGame:
 
     def loop(self):
         """Game main loop."""
-        while self.state != GameState.quitting:
-            if self.state == GameState.main_menu:
-                # pass control to the game menu's loop
-                pass
-            elif self.state == GameState.map_editing:
-                # ... etc ...
-                pass
-            elif self.state == GameState.game_playing:
-                # ... etc ...
-                pass
-        self.quit()
+        while self.state != GameState.QUITTING:
+            if self.state == GameState.MAIN_MENU:
+                self.game_menu.loop()
+            # elif self.state == GameState.map_editing:
+            #     # ... etc ...
+            #     pass
+            # elif self.state == GameState.game_playing:
+            #     # ... etc ...
+            #     pass
+        # self.quit()
 
     def initialize(self):
         """Initializes the game engine."""
@@ -116,6 +165,8 @@ class TowerGame:
         # 32 bits of color depth  # TODO: args: mode_ok(size, flags=0, depth=0, display=0) -> depth
         bit_depth = pg.display.mode_ok(self.screen_rect.size, window_style, 32)
         screen = pg.display.set_mode(self.screen_rect.size, window_style, bit_depth)
+        self.game_menu = GameMenu(game=self)
+        self.set_state(GameState.INITIALIZED)
 
         pg.mixer.pre_init(
             frequency=44100,
@@ -129,3 +180,15 @@ class TowerGame:
         self.screen = screen
 
         self.set_state(GameState.INITIALIZED)
+
+
+@dataclass
+class GameMenu(GameLoop):
+    def loop(self):
+        clock = pg.time.Clock()  # TODO: should this be a constant?
+        self.screen.blit(IMAGE_SPRITES[(False, False, 'backdrop')], (0, 0))
+        while self.state == GameState.MAIN_MENU:
+            self.handle_events()
+            pg.display.flip()
+            pg.display.set_caption(f'FPS: {clock.get_fps()}')
+            clock.tick(DESIRED_FPS)
