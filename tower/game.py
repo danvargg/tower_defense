@@ -1,10 +1,11 @@
 """Game functionalities."""
 from __future__ import annotations  # TODO: use the typing module
-import typing
+import typing  # TODO: should clock be a constant?
 import enum
 from dataclasses import dataclass, field
 
 from tower.utils import create_surface
+from tower.sprites import Layer
 
 from pygame import (
     event as pg_event, init as pg_init, display as pg_display, mixer as pg_mixer, font as pg_font,
@@ -13,23 +14,6 @@ from pygame import (
 
 from tower import SCREEN_RECT, DESIRED_FPS, IMAGE_SPRITES
 from tower.sprites import Sprite
-
-
-class Layer(enum.IntEnum):  # TODO: update this
-    # TODO: to init?
-    """Enum for the game's layers."""
-    BACKGROUND = 0
-    """Background layer."""
-    GROUND = 1
-    """Ground layer."""
-    TOWER = 2
-    """Tower layer."""
-    ENEMY = 3
-    """Enemy layer."""
-    BULLET = 4
-    """Bullet layer."""
-    UI = 5
-    """UI layer."""
 
 
 class GameState(enum.Enum):
@@ -52,17 +36,6 @@ class GameState(enum.Enum):
     """The game engine is rendering the game ended screen."""
     QUITTING = 'quitting'
     """The game engine is exiting and is unwinding"""
-
-
-class BackGround(Sprite):
-    """
-    Default background sprite. Unlike normal sprites, this one does not rotate.
-    """
-
-    _layer = Layer.BACKGROUND
-
-    def update(self):
-        pass
 
 
 class StateError(Exception):
@@ -221,7 +194,7 @@ class TowerGame:
 class GameMenu(GameLoop):
 
     def loop(self):
-        clock = pg_time.Clock()  # TODO: should clock be a constant?
+        clock = pg_time.Clock()
         background = create_surface()
         background.blit(IMAGE_SPRITES[(False, False, "backdrop")], (0, 0))
         group = sprite.Group()
