@@ -1,18 +1,11 @@
-"""Game sprites."""
-from __future__ import annotations
-import enum
-
-from pygame import sprite, mask, transform
-from pygame.math import Vector2 as Vector
-
-from tower import IMAGE_SPRITES, CACHE
-
+# -*- coding: utf-8 -*-
 import enum
 import operator
 import random
 from dataclasses import dataclass, field
 from itertools import accumulate, chain, cycle, repeat, count
 from typing import Generator, Optional, Dict
+import pygame as pg
 from structlog import get_logger
 from pygame.math import Vector2 as Vector
 
@@ -30,7 +23,7 @@ from tower import (
     TILE_WIDTH,
     VISION_RECT,
 )
-from tower.utils import create_surface, extend, interpolate
+from tower.helpers import create_surface, extend, interpolate
 
 log = get_logger()
 
@@ -94,7 +87,7 @@ class Layer(enum.IntEnum):
     hud = 60
 
 
-class Sprite(sprite.Sprite):
+class Sprite(pg.sprite.Sprite):
     """
     Base class for sprites.
     """
@@ -307,7 +300,7 @@ class Sprite(sprite.Sprite):
         self.rotate(self.orientation)
 
 
-class BackGround(Sprite):
+class Background(Sprite):
     """
     Default background sprite. Unlike normal sprites, this one does not rotate.
     """
@@ -316,3 +309,572 @@ class BackGround(Sprite):
 
     def update(self):
         pass
+
+
+class DirectedSprite(Sprite):
+    """
+    Subclass of `Sprite` that understands basic motion and rotation.
+
+    Given a `path` generator, iterate through it one game tick at a
+    time, updating the position and rotation. When the generator is
+    exhausted, change the sprite `state` to `SpriteState.stopped`.
+    """
+
+    def __init__(self, path, state=SpriteState.unknown, **kwargs):
+        super().__init__(**kwargs)
+        self.state = state
+        self.path = path
+
+    def update(self):
+        try:
+            self.animate()
+            if self.path is not None:
+                self.state = SpriteState.moving
+                position, angle = next(self.path)
+                self.move(position)
+                self.rotate(angle + next(self.angle))
+            self.play()
+        except StopIteration:
+            self.state = SpriteState.stopped
+
+
+class Enemy(DirectedSprite):
+    """
+    Subclass of `DirectedSprite` that additionally adds subtle
+    rotation to the Enemy to mimic human gait.
+    """
+
+    _layer = Layer.enemy
+
+    def __init__(self, health: int = 100, **kwargs):
+        # Tracks the offset, if any, if the image is flipped
+        self.sprite_offset = Vector(0, 0)
+        self.health = health
+        super().__init__(**kwargs)
+
+    def update(self):
+        try:
+            self.animate()
+            if self.path is not None:
+                # If we're dying we stop moving.
+                if self.animation_state == AnimationState.dying:
+                    return
+                self.state = SpriteState.moving
+                position, _, flipx = next(self.path)
+                # The state of flipx has changed since we were last
+                # invoked; that happens whenever our orientation is
+                # supposed to change.
+                if flipx != self.flipped_x:
+                    # Acknowledge flipx is changed and update the internal state.
+                    self.flipped_x = flipx
+                    # Calculate the centroid of our CURRENT mask,
+                    # before we ask `set_sprite_index` to flip our
+                    # image.
+                    centroid = self.mask.centroid()
+                    # Change to our current index (but actually flip
+                    # it because we set flipped_x before)
+                    self.set_sprite_index(self.index)
+                    # Now get the _new_ centroid
+                    new_centroid = self.mask.centroid()
+                    # The delta between both centroids is the offset
+                    # we must apply to our movement to ensure the
+                    # flipped image is placed in the exact same
+                    # position as before
+                    self.sprite_offset = Vector(new_centroid) - Vector(centroid)
+                if flipx:
+                    self.move(position - self.sprite_offset)
+                else:
+                    self.move(position)
+            self.play()
+        except StopIteration:
+            self.state = SpriteState.stopped
+
+
+class Turret(Sprite):
+    """
+    Turret sprite that rotates in a sweeping motion in the direction of `orientation`.
+
+    Additionally, the turret tracks whether it is capable of firing based on `cooldown` and `cooldown_remaining`.
+    """
+
+    _layer = Layer.turret
+
+    def __init__(self, cooldown, cooldown_remaining, **kwargs):
+        super().__init__(**kwargs)
+        self.cooldown = cooldown
+        self.cooldown_remaining = cooldown_remaining
+
+    def update(self):
+        super().update()
+        if self.cooldown_remaining > 0:
+            self.cooldown_remaining -= 1
+
+    def generate_rotation(self):
+        return repeat(0)
+
+    def shoot(self):
+        """
+        Returns True if this turret is capable of firing.
+        """
+        if self.cooldown_remaining == 0:
+            self.cooldown_remaining = self.cooldown
+            self.play()
+            return True
+        return False
+
+
+class Shrub(Background):
+    """
+    Background subclass that changes the layer to `Layer.shrub`.
+    """
+
+    _layer = Layer.shrub
+
+
+class Decal(Background):
+    """
+    Background subclass that changes the layer to `Layer.decal`.
+    """
+
+    _layer = Layer.decal
+
+
+class Projectile(DirectedSprite):
+    """
+    Background subclass that changes the layer to `Layer.projectile`
+    """
+
+    _layer = Layer.projectile
+
+    def update(self):
+        super().update()
+        if self.state == SpriteState.stopped:
+            self.animation_state = AnimationState.exploding
+
+
+class Text(DirectedSprite):
+    """
+    Subclass of `DirectedSprite` that allows for rendering text in
+    addition to basic directed movement.
+
+    Can optionally store an `action` that represents an action to be
+    taken if the item is invoked somehow.
+    """
+
+    def __init__(self, text, color, size, action=None, path=None, **kwargs):
+        self.color = color
+        self.size = size
+        self.font = pg.font.Font(FONT_NAME, size)
+        self.action = action
+        self.rect = pg.Rect(0, 0, 0, 0)
+        self.set_text(text)
+        super().__init__(path=path, image=self.image, rect=self.rect, **kwargs)
+
+    def rotate_cache_key(self):
+        """
+        Returns a tuple of fields used as a cache key to speed up rotations
+        """
+        return (
+            self.flipped_x,
+            self.flipped_y,
+            self.index,
+            self.text,
+            self.size,
+        )
+
+    def set_text(self, text):
+        self.text = text
+        self.render_text()
+
+    def render_text(self):
+        self.image = self.font.render(self.text, True, self.color)
+        self.surface = self.image
+        self.rect = self.image.get_rect(center=self.rect.center)
+
+
+class HUDText(Text):
+    """
+    Subclass of `Text` that stores a game `mode` and updates the
+    rendered text every frame with vital game stats. However, due to
+    how the `Text` sprite re-renders, we need to additionally store
+    the old texto ensure we only force re-renders when the text
+    actually has changed.
+    """
+
+    _layer = Layer.hud
+
+    def __init__(self, mode, **kwargs):
+        super().__init__(**kwargs)
+        self.mode = mode
+        self._old_text = None
+
+    def update(self):
+        text = f"Killed: {self.mode.killed} Escaped: {self.mode.escaped} Intensity: {self.mode.intensity} Max turrets: {self.mode.max_defenses}"
+        if text != self._old_text:
+            self.set_text(text)
+        self._old_text = text
+        super().update()
+
+
+def create_animation_roll(frames: Dict[AnimationState, Generator[int, None, None]]):
+    """
+    Takes a dictionary of animation states (as keys) and frame
+    generators (as values) and fills out the missing ones with `None`.
+    """
+    for state in AnimationState:
+        if state not in frames:
+            frames[state] = None
+    return frames
+
+
+def create_turret_sweep(orientation, sweep_degrees, speed=3):
+    """
+    Creates a turret sweep generator that points in `orientation`
+    and sweeps between `sweep_degrees`.
+    """
+    half_sweep = sweep_degrees // 2
+    return cycle(
+        extend(
+            chain(
+                range(orientation - half_sweep, orientation + half_sweep),
+                reversed(range(orientation - half_sweep, orientation + half_sweep)),
+            ),
+            speed,
+        ),
+    )
+
+
+class Vision(Sprite):
+    """
+    Vision sprite that represents what a turret can see.
+    """
+
+    _layer = Layer.turret_sights
+
+    @classmethod
+    def create_vision(cls, rect, **kwargs):
+        """
+        Draws a vision of `rect` size and then proceeds to create
+        a regular sprite from a surface.
+        """
+        surface = create_surface(size=rect.size)
+        surface.fill((0, 0, 128, 128))
+        surface.set_colorkey((0, 128, 128))
+        pg.draw.rect(surface, (0, 128, 128), rect, width=2)
+        return cls.create_from_surface(surface=surface, **kwargs)
+
+    def __init__(self, turret, **kwargs):
+        """
+        Creates a vision belonging to `turret`.
+        """
+        self.turret = turret
+        super().__init__(**kwargs)
+
+    def generate_rotation(self):
+        return create_turret_sweep(self.orientation, sweep_degrees=60)
+
+    def rotate(self, angle):
+        # rotate the rectangle shape so it points, length-wise,
+        # away. If you reverse the width/height you may need to alter
+        # this angle!
+        new_angle = angle + 90
+        new_image = pg.transform.rotozoom(self.surface, new_angle, 1)
+        turret = self.turret
+        # Determine where to put the rectangle relative to the turret
+        v = Vector(
+            0,
+            (self.surface.get_rect().height // 2 + turret.surface.get_rect().top),
+        )
+        # Recall that rotating a vector and applying a rotation using
+        # the transform library is different! The transform library
+        # "understands" the coordinate system used by computers;
+        # namely, that origin (0,0) is in the top-left corner of the
+        # screen as opposed to the bottom-right used in cartesian
+        # coordinate systems.
+        #
+        # Vectors, on the other hand, use regular geometry and as such
+        # we must negate the angle to ensure the rotation is correct
+        # when we add that vector to the computer's coordinate system.
+        rv = v.rotate(-new_angle)
+        new_rect = new_image.get_rect(center=turret.rect.center + rv)
+        self.image = new_image
+        self.rect = new_rect
+        self.mask = pg.mask.from_surface(self.image)
+
+
+@dataclass
+class SpriteManager:
+    """
+    Sprite Manager that manages the creation and placement of sprites.
+
+    The `sprites` group is the internal store of sprites currently
+    managed by the sprite manager. This is usually the case when
+    you're picking and placing sprites during map editing or game
+    play.
+
+    The `layers` group is a reference to the primary layers group used
+    for the game loop renderer.
+
+    `indices` is a generator of indices the user can cycle through
+    with the scroll wheel.
+
+    `channels` is a reference to the dictionary of named channels to
+    actual sound mixer channels.
+
+    `_last_index` and `_last_orientation` track the most recent index
+    and orientation.
+    """
+
+    sprites: pg.sprite.LayeredUpdates
+    layers: pg.sprite.LayeredUpdates
+    indices: Optional[Generator[int, None, None]]
+    channels: dict
+    _last_index: Optional[int] = field(init=False, default=None)
+    _last_orientation: int = field(init=False, default=0)
+
+    def update(self):
+        """
+        Pass-through to the internal sprite group's update method.
+        """
+        return self.sprites.update()
+
+    def clear(self, dest, background):
+        """
+        Pass-through to the internal sprite group's clear method.
+        """
+        return self.sprites.clear(dest, background)
+
+    def draw(self, surface):
+        """
+        Pass-through to the internal sprite group's draw method.
+        """
+        return self.sprites.draw(surface)
+
+    def empty(self):
+        """
+        Pass-through to the sprite group's empty method.
+        """
+        self.sprites.empty()
+
+    def kill(self):
+        """
+        Kills all sprites in the internal sprites group.
+        """
+        for sprite in self.sprites:
+            sprite.kill()
+
+    def increment_orientation(self, relative_orientation):
+        """
+        Increments each sprite's relative orientation by `relative_orientation`.
+        """
+        for sprite in self.sprites:
+            rot = sprite.orientation
+            rot += relative_orientation
+            rot %= 360
+            sprite.set_orientation(rot)
+            self._last_orientation = rot
+
+    def move(self, position):
+        """
+        Moves all sprites in the internal sprite group to `position`.
+
+        However, a special case is made for background layer items, as
+        they are ALWAYS aligned on a grid. Those sprites are instead
+        'snapped' to the nearest grid tile.
+
+        All other sprites are moved by their center position.
+        """
+        x, y = position
+        for sprite in self.sprites:
+            if sprite.layer == Layer.background:
+                gx, gy = (x - (x % TILE_WIDTH), y - (y % TILE_HEIGHT))
+                sprite.move((gx, gy), center=False)
+            else:
+                sprite.move((x, y))
+
+    def place(self, position, clear_after=True):
+        """
+        Places all sprites in the internal sprite group at `position`.
+
+        This is typically the outcome of left-clicking on the game map
+        to place sprites.
+        """
+        for sprite in self.sprites:
+            sprite.move(position)
+            if clear_after:
+                self.sprites.remove(sprite)
+
+    def reset(self):
+        """
+        Resets the last index and orientation.
+        """
+        self._last_index = None
+        self._last_orientation = 0
+
+    def cycle_index(self):
+        """
+        Cycles the index of sprites to the next one in the
+        generator and updates the sprite index of all sprites
+        accordingly.
+
+        Note this only works with background and shrub sprites.
+        """
+        if self.indices is None:
+            return
+        new_index = next(self.indices)
+        for sprite in self.sprites:
+            if sprite.layer in (Layer.background, Layer.shrub):
+                sprite.set_sprite_index(new_index)
+        self._last_index = new_index
+
+    @property
+    def selected(self):
+        """
+        Returns true the internal sprite group is 'truthy' ---
+        that is, if it has elements.
+        """
+        return bool(self.sprites)
+
+    def select_sprites(self, sprites, position=None):
+        """
+        Selects `sprites` by adding them to the internal sprite
+        group and optionally moves them all to `position`.
+        """
+        self.sprites.add(sprites)
+        if position is not None:
+            self.move(position)
+
+    def create_background(self, position, orientation=None, index=None):
+        """
+        Factory that creates a background sprite at a given
+        `position`, with optional `index` and `orientation`.
+        """
+        if index is None:
+            index = self._last_index
+        self.indices = cycle(ALLOWED_BG_SPRITES)
+        if orientation is None:
+            orientation = self._last_orientation
+        background = Background.create_from_sprite(
+            sounds=None,
+            groups=[self.layers],
+            index=next(self.indices) if index is None else index,
+            orientation=orientation,
+        )
+        return background
+
+    def create_shrub(self, position, orientation=None, index=None):
+        """
+        Factory that creates a shrub sprite at a given `position`,
+        with optional `index` and `orientation`.
+        """
+        if index is None:
+            index = self._last_index
+        self.indices = cycle(ALLOWED_SHRUBS)
+        if orientation is None:
+            orientation = self._last_orientation
+        shrub = Shrub.create_from_sprite(
+            sounds=None,
+            groups=[self.layers],
+            index=next(self.indices) if index is None else index,
+            orientation=orientation,
+        )
+        return shrub
+
+    def create_enemy(self, position, path):
+        """
+        Factory that creates a enemy sprite at a given `position` with a `path`.
+        """
+        enemy = Enemy.create_from_sprite(
+            index="enemy_1_walk_001",
+            sounds=cycle(chain([SOUND_FOOTSTEPS], repeat(None, 120))),
+            channel=self.channels["footsteps"],
+            animation_state=AnimationState.walking,
+            frames=create_animation_roll(
+                {
+                    AnimationState.walking: cycle(extend(ANIMATIONS["enemy_walk"], 2)),
+                    AnimationState.dying: chain(
+                        iter(ANIMATIONS["enemy_die"]),
+                        # Repeat the last frame for a little while
+                        # before the sprite is killed.
+                        repeat(ANIMATIONS["enemy_die"][-1], 20),
+                    ),
+                },
+            ),
+            path=path,
+            groups=[self.layers],
+            state=SpriteState.moving,
+        )
+        enemy.move(position)
+        return [enemy]
+
+    def create_projectile(self, source, target, speed=4, max_distance=150):
+        """
+        Factory that creates a projectile sprite starting at `source`
+        and moves toward `target` at `speed` before disappearing if it
+        reaches `max_distance`.
+        """
+        # v1 is our target -- aiming for the center of the sprite rect.
+        v1 = Vector(target.rect.center)
+        # v1 is our source -- starting at the center of the sprite rect.
+        v2 = Vector(source.rect.center)
+
+        # Calculate the unit vector of (v1-v2) then multiply it by `speed`
+        vh = (v1 - v2).normalize() * speed
+        path = zip(
+            # Using accumulate we can repeatedly build up sums of v2 +
+            # (vh * N) where N is the N'th iteration.
+            #
+            # Thus, the resulting generator yields:
+            #
+            #  [v2,
+            #   v2 + vh,
+            #   v2 + vh + vh,
+            #   ...,
+            #   v2 + (N * vh )] until `max_distance`.
+            accumulate(repeat(vh, max_distance), func=operator.add, initial=v2),
+            # It's a rock, so let's make it rotate a bit as it flies
+            count(random.randint(0, 180)),
+        )
+        projectile = Projectile.create_from_sprite(
+            position=source.rect.center,
+            groups=[self.layers],
+            orientation=0,
+            index="projectile",
+            frames=create_animation_roll(
+                {
+                    AnimationState.exploding: extend(
+                        ANIMATIONS["projectile_explode"], 2
+                    ),
+                },
+            ),
+            path=path,
+            sounds=None,
+        )
+        projectile.move(source.rect.center)
+        return [projectile]
+
+    def create_turret(self, position, orientation: int = 90):
+        """
+        Create a turret (and associated sprites) at `position`
+        with optional `orientation`.
+        """
+        turret = Turret.create_from_sprite(
+            position=position,
+            groups=[self.layers],
+            index="turret",
+            cooldown=30,
+            sounds=cycle(chain([SOUND_TURRET])),
+            channel=self.channels["turrets"],
+            cooldown_remaining=0,
+            orientation=0,
+        )
+        turret.move(position)
+        vision = Vision.create_vision(
+            rect=VISION_RECT,
+            turret=turret,
+            position=position,
+            groups=[self.layers],
+            orientation=orientation,
+        )
+        vision.move(position)
+        return [turret, vision]
