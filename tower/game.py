@@ -1,17 +1,38 @@
 """Game functionalities."""
+from __future__ import annotations  # TODO: use the typing module
 import typing
-from enum import Enum
-from dataclasses import dataclass, field  # TODO: replace pg vs methods
+import enum
+from dataclasses import dataclass, field
+
+from tower.utils import create_surface
 
 from pygame import (
     event as pg_event, init as pg_init, display as pg_display, mixer as pg_mixer, font as pg_font,
-    KEYDOWN, K_ESCAPE, QUIT, FULLSCREEN, Surface as pg_surface, Rect as pg_rect, time as pg_time
+    KEYDOWN, K_ESCAPE, QUIT, FULLSCREEN, Surface as pg_surface, Rect as pg_rect, time as pg_time, sprite
 )
 
 from tower import SCREEN_RECT, DESIRED_FPS, IMAGE_SPRITES
+from tower.sprites import Sprite
 
 
-class GameState(Enum):
+class Layer(enum.IntEnum):  # TODO: update this
+    # TODO: to init?
+    """Enum for the game's layers."""
+    BACKGROUND = 0
+    """Background layer."""
+    GROUND = 1
+    """Ground layer."""
+    TOWER = 2
+    """Tower layer."""
+    ENEMY = 3
+    """Enemy layer."""
+    BULLET = 4
+    """Bullet layer."""
+    UI = 5
+    """UI layer."""
+
+
+class GameState(enum.Enum):
     """
     Enum for the game's state machine. Every state represents ad knowm game state for the game engine.
     """
@@ -33,6 +54,17 @@ class GameState(Enum):
     """The game engine is exiting and is unwinding"""
 
 
+class BackGround(Sprite):
+    """
+    Default background sprite. Unlike normal sprites, this one does not rotate.
+    """
+
+    _layer = Layer.BACKGROUND
+
+    def update(self):
+        pass
+
+
 class StateError(Exception):
     """
     Raised if the game is in an unexpected game state at a point where we expect it to be in a different state.
@@ -46,14 +78,14 @@ class GamEditing:
 
 @dataclass
 class GameLoop:
-    """_summary_
+    """Game main loop.
 
     Attributes:
         game (TowerGame): The game engine.
     """
-    game: 'TowerGame'
+    game: TowerGame
 
-    def handle_events(self):
+    def handle_events(self) -> None:
         """
         Sample event handler that ensures quit events and normal event loop processing takes place. Without this,
         the game will hang, and repaints by the operating system will not happen, causing the game window to hang.
@@ -65,7 +97,7 @@ class GameLoop:
             # Delegate the event to a sub-event handler `handle_event`
             self.handle_event(event)
 
-    def loop(self):
+    def loop(self) -> None:
         """_summary_
         """
         while self.state != GameState.QUITTING:
@@ -108,7 +140,7 @@ class TowerGame:
     game_menu: GameLoop = field(init=False, default=None)
 
     @classmethod  # TODO: how does this method work?
-    def create(cls, full_screen: bool = False) -> 'TowerGame':  # TODO: double check this return type
+    def create(cls, full_screen: bool = False) -> TowerGame:
         """Creates the game instance.
 
         Args:
@@ -145,7 +177,7 @@ class TowerGame:
         self.set_state(GameState.MAIN_MENU)
         self.loop()
 
-    def loop(self):
+    def loop(self) -> None:
         """Game main loop."""
         while self.state != GameState.QUITTING:
             if self.state == GameState.MAIN_MENU:
@@ -158,7 +190,7 @@ class TowerGame:
             #     pass
         # self.quit()
 
-    def initialize(self):
+    def initialize(self) -> None:
         """Initializes the game engine."""
         self.assert_state_is(GameState.INITIALIZING)
         pg_init()
@@ -187,11 +219,29 @@ class TowerGame:
 
 @dataclass
 class GameMenu(GameLoop):
+
     def loop(self):
-        clock = pg_time.Clock()  # TODO: should this be a constant?
-        self.screen.blit(IMAGE_SPRITES[(False, False, 'backdrop')], (0, 0))
+        clock = pg_time.Clock()  # TODO: should clock be a constant?
+        background = create_surface()
+        background.blit(IMAGE_SPRITES[(False, False, "backdrop")], (0, 0))
+        group = sprite.Group()
+        logo = BackGround.create_from_tile(
+            groups=[group],
+            index="game_logo",
+            orientation=0,
+            position=self.game.screen_rect.center,
+        )
+        rotation = 0
         while self.state == GameState.MAIN_MENU:
             self.handle_events()
+            # Repaint background
+            self.screen.blit(background, (0, 0))
+            rotation += 1
+            logo.rotate(rotation % 360)
+            # Instruct all sprites to update
+            group.update()
+            # Tell the group where to draw
+            group.draw(self.screen)
             pg_display.flip()
-            pg_display.set_caption(f'FPS: {clock.get_fps()}')
+            pg_display.set_caption(f"FPS {round(clock.get_fps())}")
             clock.tick(DESIRED_FPS)
