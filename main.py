@@ -16,7 +16,7 @@ if __name__ == '__main__':
 # import click
 # from tower.game import start_game
 
-# log = get_logger()
+# log = get_logger()  # TODO: what is the logger doing here?
 
 
 # @click.group()

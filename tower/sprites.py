@@ -307,7 +307,7 @@ class Sprite(sprite.Sprite):
         self.rotate(self.orientation)
 
 
-class Background(Sprite):
+class BackGround(Sprite):
     """
     Default background sprite. Unlike normal sprites, this one does not rotate.
     """
