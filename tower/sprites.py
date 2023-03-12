@@ -1,13 +1,14 @@
-# -*- coding: utf-8 -*-
-import enum
+# -*- coding: utf-8 -*-  # TODO: remove all these
+import enum  # TODO: all enums to caps
 import operator
 import random
 from dataclasses import dataclass, field
 from itertools import accumulate, chain, cycle, repeat, count
 from typing import Generator, Optional, Dict
-import pygame as pg
 from structlog import get_logger
 from pygame.math import Vector2 as Vector
+
+from pygame import sprite as pg_sprite, mask as pg_mask, transform as pg_transform  # TODO: can this be doen in init?
 
 from tower import (
     ALLOWED_BG_SPRITES,
@@ -23,7 +24,7 @@ from tower import (
     TILE_WIDTH,
     VISION_RECT,
 )
-from tower.helpers import create_surface, extend, interpolate
+from tower.utils import create_surface, extend, interpolate
 
 log = get_logger()
 
@@ -87,7 +88,7 @@ class Layer(enum.IntEnum):
     hud = 60
 
 
-class Sprite(pg.sprite.Sprite):
+class Sprite(sprite.Sprite):
     """
     Base class for sprites.
     """

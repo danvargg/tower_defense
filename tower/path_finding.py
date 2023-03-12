@@ -4,18 +4,22 @@ from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional, Tuple
 
-import pygame as pg
-from structlog import get_logger
-from pygame.math import Vecator2 as Vector
+# TODO: change all pg by methods
+# TODO: do all doctrings, typings, module docstrings
 
-from tower.constants import (
+from pygame import sprite
+
+from structlog import get_logger
+from pygame.math import Vector2 as Vector
+
+from tower import (
     MOVABLE_TILE_IDS,
     START_TILE_ID,
     STOP_TILE_ID,
     TILES_X,
     TILES_Y,
 )
-from tower.helpers import angle_to, interpolate, tile_positions, pairwise
+from tower.utils import angle_to, interpolate, tile_positions, pairwise
 
 log = get_logger()
 
@@ -56,7 +60,7 @@ class GridTile:
     with a tuple of its grid `position`.
     """
 
-    tile: pg.sprite.Sprite
+    tile: sprite.Sprite
     position: Tuple[int, int]
     east: Optional["GridTile"] = field(repr=False, default=None)
     west: Optional["GridTile"] = field(repr=False, default=None)

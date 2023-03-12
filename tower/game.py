@@ -9,11 +9,10 @@ from dataclasses import dataclass, field
 from itertools import chain, repeat, tee
 from typing import Generator, Optional, List
 
-import pygame as pg
 from structlog import get_logger
 from pygame.math import Vector2 as Vector
 
-from tower.constants import (
+from tower import (
     DESIRED_FPS,
     IMAGE_SPRITES,
     PATH_COLORS,
@@ -25,13 +24,13 @@ from tower.constants import (
     MAX_ESCAPED,
     MOUSE_LEFT,
     MOUSE_RIGHT,
-    SCREENRECT,
+    SCREEN_RECT,
     SOUNDS,
     SPRITES,
     TILES_X,
     TILES_Y,
 )
-from tower.helpers import (
+from tower.utils import (
     create_surface,
     lerp,
     cube,
@@ -42,7 +41,7 @@ from tower.helpers import (
     pairwise,
 )
 from tower.loader import import_image, import_sound, import_level
-from tower.pathfinding import make_enemy_path, update_path_finding, get_directions
+from tower.path_finding import make_enemy_path, update_path_finding, get_directions
 from tower.sprites import (
     AnimationState,
     Background,
